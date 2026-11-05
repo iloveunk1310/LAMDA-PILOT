@@ -81,10 +81,12 @@ python main.py --config ./exps/simplecil.json --use_wandb
 ```
 
 ### 4.2. Ghi đè thông số qua tham số dòng lệnh CLI
-Bạn có thể tùy biến project, entity, group hoặc thêm tags mà không cần sửa file JSON:
+Bạn có thể tùy biến batch size, learning rate, project, entity, group hoặc thêm tags mà không cần sửa file JSON:
 
 ```powershell
 python main.py --config ./exps/simplecil.json \
+    --batch_size 32 \
+    --init_lr 0.01 \
     --use_wandb \
     --wandb_project Group7-ML-Lab \
     --wandb_entity nnm-hcmus \

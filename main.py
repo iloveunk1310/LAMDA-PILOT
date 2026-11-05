@@ -24,6 +24,10 @@ def setup_parser():
     parser = argparse.ArgumentParser(description='Reproduce of multiple pre-trained incremental learning algorthms.')
     parser.add_argument('--config', type=str, default='./exps/simplecil.json',
                         help='Json file of settings.')
+    parser.add_argument('--batch_size', type=int, default=None,
+                        help='Batch size for training and evaluation.')
+    parser.add_argument('--init_lr', type=float, default=None,
+                        help='Initial learning rate.')
     parser.add_argument('--use_wandb', action='store_true', default=None,
                         help='Enable Weights & Biases experiment tracking.')
     parser.add_argument('--no_wandb', action='store_false', dest='use_wandb',
