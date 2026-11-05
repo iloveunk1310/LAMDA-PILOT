@@ -1,4 +1,5 @@
 import os
+import subprocess
 import numpy as np
 import torch
 from collections import OrderedDict
@@ -85,6 +86,7 @@ def split_images_labels(imgs):
 
     return np.array(images), np.array(labels)
 
+
 def state_dict_to_vector(state_dict, remove_keys=[]) -> torch.Tensor:
     shared_state_dict = copy.deepcopy(state_dict)
     shared_state_dict_keys = list(shared_state_dict.keys())
@@ -115,3 +117,79 @@ def vector_to_state_dict(vector, state_dict, remove_keys=[]):
     torch.nn.utils.vector_to_parameters(vector, sorted_reference_dict.values())
 
     return sorted_reference_dict
+
+
+def get_git_commit():
+    """
+    Retrieve current git commit hash if available.
+    """
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL
+        ).decode("utf-8").strip()
+        return commit
+    except Exception:
+        return "unknown"
+
+
+def init_wandb(args):
+    """
+    Initialize a Weights & Biases run with standardized metadata.
+    Only imports and initializes wandb if args.get("use_wandb") is True.
+    """
+    if not args.get("use_wandb", False):
+        return None
+
+    import wandb
+
+    model_name = args.get("model_name", "unknown")
+    dataset = args.get("dataset", "unknown")
+    init_cls = 0 if args.get("init_cls") == args.get("increment") else args.get("init_cls", 0)
+    increment = args.get("increment", 0)
+    seed = args.get("seed", 0)
+    backbone_type = args.get("backbone_type", "unknown")
+
+    run_name = f"PILOT_{model_name}_{dataset}_b{init_cls}inc{increment}_s{seed}"
+    group = args.get("wandb_group") or "LAMDA-PILOT"
+    project = args.get("wandb_project") or "Group7-ML-Lab"
+    entity = args.get("wandb_entity") or "nnm-hcmus"
+
+    tags = [
+        "repo:LAMDA-PILOT",
+        f"method:{model_name}",
+        f"dataset:{dataset}",
+        f"backbone:{backbone_type}",
+    ]
+    custom_tags = args.get("wandb_tags")
+    if custom_tags:
+        if isinstance(custom_tags, list):
+            tags.extend(custom_tags)
+        else:
+            tags.append(str(custom_tags))
+
+    # Prepare serializable config dict
+    config = {}
+    for k, v in args.items():
+        if isinstance(v, (int, float, str, bool, list, dict)) or v is None:
+            config[k] = v
+        else:
+            config[k] = str(v)
+
+    config["repo_name"] = "LAMDA-PILOT"
+    config["git_commit"] = get_git_commit()
+
+    init_kwargs = {
+        "project": project,
+        "group": group,
+        "name": run_name,
+        "tags": tags,
+        "config": config,
+        "reinit": "finish_previous",
+    }
+    if entity:
+        init_kwargs["entity"] = entity
+    if args.get("wandb_mode"):
+        init_kwargs["mode"] = args["wandb_mode"]
+
+    run = wandb.init(**init_kwargs)
+    return run

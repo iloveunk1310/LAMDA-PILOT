@@ -9,16 +9,23 @@
     "increment": 10,
     "model_name": "simplecil",
     "backbone_type": "pretrained_vit_b16_224",
-    "device": ["0"],
-    "seed": [1993],
-    
+    "device": [
+        "0"
+    ],
+    "seed": [
+        1993
+    ],
     "tuned_epoch": 0,
     "init_lr": 0.01,
-    "batch_size": 256,
+    "batch_size": 32,
     "weight_decay": 0.05,
     "min_lr": 1e-8,
     "optimizer": "sgd",
     "vpt_type": "shallow",
-    "prompt_token_num": 3
+    "prompt_token_num": 3,
+    "use_wandb": false,
+    "wandb_project": "Group7-ML-Lab",
+    "wandb_entity": "nnm-hcmus",
+    "wandb_group": "LAMDA-PILOT",
+    "wandb_tags": []
 }
-
