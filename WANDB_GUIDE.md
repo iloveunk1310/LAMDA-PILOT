@@ -49,6 +49,7 @@ wandb login
 - **Group**: Mặc định là `"LAMDA-PILOT"` (giúp lọc riêng các runs của repo này hoặc gom nhóm theo từng phương pháp).
 - **Tên Run chuẩn hóa**: `PILOT_{model_name}_{dataset}_b{init_cls}inc{increment}_s{seed}`
   - Ví dụ: `PILOT_simplecil_cifar224_b0inc10_s1993`
+  - Riêng `Finetune Adapter` (`model_name="finetune"` với `backbone_type` chứa `"adapter"`) được gắn nhãn tự động là `finetune_adapter` (ví dụ: `PILOT_finetune_adapter_cifar224_b0inc5_s1993`, tag `method:finetune_adapter`) để phân biệt với `finetune` toàn bộ backbone.
 - **Metadata tự động đính kèm**:
   - `repo_name`: `"LAMDA-PILOT"`
   - `git_commit`: Mã hash commit hiện tại từ git
@@ -115,7 +116,54 @@ python main.py --config ./exps/simplecil.json --no_wandb
 
 ---
 
-## 5. Lưu ý Tối ưu cho Phần Cứng Quadro T1000 (4GB VRAM) trên Windows 11
+## 5. Quy trình Benchmark Suite 6 Dataset & 12 Phương pháp trên Google Colab
+
+Để chạy thực nghiệm đồng bộ theo chuẩn `B0 Inc-n` trên 6 bộ dữ liệu (đã loại bỏ `ObjectNet`) với trọn vẹn 12 phương pháp mục tiêu, sử dụng quy trình 3 bước đọc trực tiếp từ `dataset.txt` và `exps/benchmarks.json`.
+
+### 5.1. Quy trình 3 bước trên Google Colab
+
+```bash
+# Bước 1: Tải file nén từ dataset.txt (mặc định tải cả 5 bộ ngoài CIFAR-100 vào ./data/archives)
+# Có thể lọc bằng --dataset hoặc --benchmark; dùng --archive_dir để lưu trên Google Drive
+!python download_data.py --benchmark all_6 --archive_dir ./data/archives
+
+# Bước 2: Giải nén và chuẩn hóa cây thư mục train/ và test/ vào ./data/
+# Dùng --cleanup để xóa file nén sau khi xác nhận thư mục đích hợp lệ
+!python extract_data.py --benchmark all_6 --archive_dir ./data/archives --data_dir ./data --cleanup
+
+# Bước 3: Chạy huấn luyện theo phương pháp (--method) và preset hoặc cụm (--benchmark)
+!python main.py --method finetune_adapter --benchmark fast --use_wandb
+```
+
+> **Lưu ý:**
+> - `cifar224` (CIFAR-100) tự động tải qua `torchvision` trong lúc chạy `main.py`, nên không nằm trong `dataset.txt` (`download_data.py --dataset cifar224` sẽ thông báo bỏ qua).
+> - Nếu muốn đổi nguồn tải (ví dụ sang Google Drive cá nhân khi bị giới hạn lượt tải), chỉ cần sửa URL tương ứng trong `dataset.txt` (`<url> <filename>`).
+> - Dùng `--dry_run` trên `main.py` để kiểm tra cấu hình đã phân giải trước khi huấn luyện:
+>   `!python main.py --method finetune_adapter --benchmark all_6 --dry_run`
+> - Có thể ghi đè trực tiếp dữ liệu hoặc backbone qua CLI: `--dataset`, `--init_cls`, `--increment`, `--backbone_type`, `--batch_size`, `--init_lr`.
+
+### 5.2. Danh sách 6 Preset & 4 Cụm Thực thi (`exps/benchmarks.json`)
+
+| Cụm (`Cluster`) | Preset ID | Dataset (`utils/data.py`) | Số lớp | `init_cls` / `increment` | Số tasks | File nguồn (`dataset.txt`) |
+| :--- | :--- | :--- | :-: | :-: | :-: | :--- |
+| `fast` | `vtab_b0inc10` | `vtab` | 50 | `10` / `10` | 5 | `vtab.zip` |
+| `fast` | `cifar_b0inc5` | `cifar224` | 100 | `5` / `5` | 20 | *(torchvision tự tải)* |
+| `inc10_200c` | `cub_b0inc10` | `cub` | 200 | `10` / `10` | 20 | `cub.zip` |
+| `inc10_200c` | `ina_b0inc10` | `imageneta` | 200 | `10` / `10` | 20 | `imagenet-a.zip` |
+| `long_or_large` | `omnibench_b0inc30` | `omnibenchmark` | 300 | `30` / `30` | 10 | `omnibenchmark.zip` |
+| `long_or_large` | `inr_b0inc5` | `imagenetr` | 200 | `5` / `5` | 40 | `imagenet-r.zip` |
+| `all_6` | *(Toàn bộ 6 preset trên)* | — | — | — | — | — |
+
+### 5.3. Danh sách 12 Phương pháp Hỗ trợ (`--method`)
+
+- **Baselines & Prompt / PEFT:** `finetune`, `finetune_adapter`, `l2p`, `dualprompt`, `coda_prompt`, `lae`
+- **RevisitingCIL (`SimpleCIL` & `APER`):** `simplecil`, `aper_finetune`, `aper_ssf`, `aper_vpt_shallow`, `aper_vpt_deep`, `aper_adapter`
+
+*(Khi chạy `cifar224`, `main.py` tự động chọn template `<method>.json`; với 5 bộ ảnh 224x224 còn lại, `main.py` tự động chọn `<method>_inr.json`.)*
+
+---
+
+## 6. Lưu ý Tối ưu cho Phần Cứng Quadro T1000 (4GB VRAM) trên Windows 11
 
 Nếu gặp lỗi **CUDA Out of Memory (OOM)** hoặc đóng băng luồng dữ liệu trên Windows:
 1. **Batch Size**: Giảm `batch_size` trong file cấu hình JSON xuống `64` hoặc `32` (mặc định của ViT là 256 thường chiếm nhiều VRAM).

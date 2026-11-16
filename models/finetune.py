@@ -56,7 +56,7 @@ class Learner(BaseLearner):
         self._network.to(self._device)
         if self._cur_task == 0:
             optimizer = optim.SGD(
-                self._network.parameters(),
+                filter(lambda p: p.requires_grad, self._network.parameters()),
                 momentum=0.9,
                 lr=self.args["init_lr"],
                 weight_decay=self.args["init_weight_decay"],
@@ -67,7 +67,7 @@ class Learner(BaseLearner):
             self._init_train(train_loader, test_loader, optimizer, scheduler)
         else:
             optimizer = optim.SGD(
-                self._network.parameters(),
+                filter(lambda p: p.requires_grad, self._network.parameters()),
                 lr=self.args["lrate"],
                 momentum=0.9,
                 weight_decay=self.args["weight_decay"],

@@ -1,0 +1,124 @@
+{
+    "presets": {
+        "cifar_b0inc5": {
+            "dataset": "cifar224",
+            "init_cls": 5,
+            "increment": 5,
+            "template_group": "cifar",
+            "num_classes": 100,
+            "num_tasks": 20
+        },
+        "cub_b0inc10": {
+            "dataset": "cub",
+            "init_cls": 10,
+            "increment": 10,
+            "template_group": "inr",
+            "num_classes": 200,
+            "num_tasks": 20
+        },
+        "inr_b0inc5": {
+            "dataset": "imagenetr",
+            "init_cls": 5,
+            "increment": 5,
+            "template_group": "inr",
+            "num_classes": 200,
+            "num_tasks": 40
+        },
+        "ina_b0inc10": {
+            "dataset": "imageneta",
+            "init_cls": 10,
+            "increment": 10,
+            "template_group": "inr",
+            "num_classes": 200,
+            "num_tasks": 20
+        },
+        "omnibench_b0inc30": {
+            "dataset": "omnibenchmark",
+            "init_cls": 30,
+            "increment": 30,
+            "template_group": "inr",
+            "num_classes": 300,
+            "num_tasks": 10
+        },
+        "vtab_b0inc10": {
+            "dataset": "vtab",
+            "init_cls": 10,
+            "increment": 10,
+            "template_group": "inr",
+            "num_classes": 50,
+            "num_tasks": 5
+        }
+    },
+    "clusters": {
+        "fast": [
+            "vtab_b0inc10",
+            "cifar_b0inc5"
+        ],
+        "inc10_200c": [
+            "cub_b0inc10",
+            "ina_b0inc10"
+        ],
+        "long_or_large": [
+            "omnibench_b0inc30",
+            "inr_b0inc5"
+        ],
+        "all_6": [
+            "vtab_b0inc10",
+            "cifar_b0inc5",
+            "cub_b0inc10",
+            "ina_b0inc10",
+            "omnibench_b0inc30",
+            "inr_b0inc5"
+        ]
+    },
+    "methods": {
+        "finetune": {
+            "cifar": "./exps/finetune.json",
+            "inr": "./exps/finetune_inr.json"
+        },
+        "finetune_adapter": {
+            "cifar": "./exps/finetune_adapter.json",
+            "inr": "./exps/finetune_adapter_inr.json"
+        },
+        "l2p": {
+            "cifar": "./exps/l2p.json",
+            "inr": "./exps/l2p_inr.json"
+        },
+        "dualprompt": {
+            "cifar": "./exps/dualprompt.json",
+            "inr": "./exps/dualprompt_inr.json"
+        },
+        "coda_prompt": {
+            "cifar": "./exps/coda_prompt.json",
+            "inr": "./exps/coda_prompt_inr.json"
+        },
+        "lae": {
+            "cifar": "./exps/lae.json",
+            "inr": "./exps/lae_inr.json"
+        },
+        "simplecil": {
+            "cifar": "./exps/simplecil.json",
+            "inr": "./exps/simplecil_inr.json"
+        },
+        "aper_finetune": {
+            "cifar": "./exps/aper_finetune.json",
+            "inr": "./exps/aper_finetune_inr.json"
+        },
+        "aper_ssf": {
+            "cifar": "./exps/aper_ssf.json",
+            "inr": "./exps/aper_ssf_inr.json"
+        },
+        "aper_vpt_shallow": {
+            "cifar": "./exps/aper_vpt_shallow.json",
+            "inr": "./exps/aper_vpt_shallow_inr.json"
+        },
+        "aper_vpt_deep": {
+            "cifar": "./exps/aper_vpt_deep.json",
+            "inr": "./exps/aper_vpt_deep_inr.json"
+        },
+        "aper_adapter": {
+            "cifar": "./exps/aper_aperpter.json",
+            "inr": "./exps/aper_aperpter_inr.json"
+        }
+    }
+}

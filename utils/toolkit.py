@@ -149,14 +149,18 @@ def init_wandb(args):
     seed = args.get("seed", 0)
     backbone_type = args.get("backbone_type", "unknown")
 
-    run_name = f"PILOT_{model_name}_{dataset}_b{init_cls}inc{increment}_s{seed}"
+    effective_method = model_name
+    if model_name == "finetune" and "adapter" in str(backbone_type).lower():
+        effective_method = "finetune_adapter"
+
+    run_name = f"PILOT_{effective_method}_{dataset}_b{init_cls}inc{increment}_s{seed}"
     group = args.get("wandb_group") or "LAMDA-PILOT"
     project = args.get("wandb_project") or "Group7-ML-Lab"
     entity = args.get("wandb_entity") or "nnm-hcmus"
 
     tags = [
         "repo:LAMDA-PILOT",
-        f"method:{model_name}",
+        f"method:{effective_method}",
         f"dataset:{dataset}",
         f"backbone:{backbone_type}",
     ]

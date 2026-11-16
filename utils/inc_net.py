@@ -64,8 +64,8 @@ def get_backbone(args, pretrained=False):
             raise NotImplementedError("Inconsistent model name and model type")
 
     elif '_adapter' in name:
-        ffn_num = args["ffn_num"]
-        if args["model_name"] == "aper_adapter" or args["model_name"] == "ranpac" or args["model_name"] == "fecam":
+        ffn_num = args.get("ffn_num", 64)
+        if args["model_name"] in ["aper_adapter", "ranpac", "fecam", "finetune"]:
             from backbone import vit_adapter
             from easydict import EasyDict
             tuning_config = EasyDict(
@@ -85,7 +85,7 @@ def get_backbone(args, pretrained=False):
                 model = vit_adapter.vit_base_patch16_224_adapter(num_classes=0,
                     global_pool=False, drop_path_rate=0.0, tuning_config=tuning_config)
                 model.out_dim=768
-            elif name == "pretrained_vit_b16_224_in21k_adapter":
+            elif name in ["pretrained_vit_b16_224_in21k_adapter", "pretrained_vit_b16_224_adapter_in21k"]:
                 model = vit_adapter.vit_base_patch16_224_in21k_adapter(num_classes=0,
                     global_pool=False, drop_path_rate=0.0, tuning_config=tuning_config)
                 model.out_dim=768
@@ -275,7 +275,7 @@ class BaseNet(nn.Module):
         self.backbone = get_backbone(args, pretrained)
         print('After BaseNet initialization.')
         self.fc = None
-        self._device = args["device"][0]
+        self._device = args["device"][0] if args.get("device") else None
 
         if 'resnet' in args['backbone_type']:
             self.model_type = 'cnn'
@@ -1133,7 +1133,7 @@ class LAE(nn.Module):
         self.backbone = get_backbone(args, pretrained=pretrained)
         self.backbone.out_dim = 768
         self.fc = None
-        self._device = args["device"][0]
+        self._device = args["device"][0] if args.get("device") else None
         self.args = args
         self.pet_cls = args["pet_cls"]
         self.pet_length = args["pet_length"]
@@ -1213,7 +1213,7 @@ class MOSNet(nn.Module):
         self.backbone = get_backbone(args, pretrained)
         self.backbone.out_dim = 768
         self.fc = None
-        self._device = args["device"][0]
+        self._device = args["device"][0] if args.get("device") else None
 
     @property
     def feature_dim(self):
@@ -1257,7 +1257,7 @@ class TUNANet(nn.Module):
         self.backbone = get_backbone(args, pretrained)
         self.backbone.out_dim = 768
         self.fc = None
-        self._device = args["device"][0]
+        self._device = args["device"][0] if args.get("device") else None
        
 
     @property
