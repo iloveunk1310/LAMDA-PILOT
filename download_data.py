@@ -1,7 +1,10 @@
 import argparse
 import json
 import os
+import re
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -196,47 +199,228 @@ def _download_google_drive(url, output_path):
     os.replace(tmp_path, output_path)
 
 
-def _download_direct(url, output_path):
+def _parse_content_range_total(content_range):
+    if not content_range:
+        return None
+    match = re.search(r"/(\d+)\s*$", content_range)
+    return int(match.group(1)) if match else None
+
+
+def _open_progress_bar(desc, total_size, initial=0):
+    try:
+        from tqdm import tqdm
+
+        return tqdm(
+            total=total_size,
+            initial=initial,
+            unit="B",
+            unit_scale=True,
+            unit_divisor=1024,
+            desc=desc,
+        )
+    except ImportError:
+        return None
+
+
+def _stream_to_file(chunk_iter, tmp_path, mode, total_size, initial, desc):
+    pbar = _open_progress_bar(desc, total_size, initial=initial)
+    written = initial
+    next_log_bytes = initial + 50 * 1024 * 1024
+    try:
+        with open(tmp_path, mode) as f:
+            for chunk in chunk_iter:
+                if not chunk:
+                    continue
+                f.write(chunk)
+                n = len(chunk)
+                written += n
+                if pbar is not None:
+                    pbar.update(n)
+                elif written >= next_log_bytes:
+                    mb = written / (1024 * 1024)
+                    if total_size:
+                        total_mb = total_size / (1024 * 1024)
+                        print(f"  ... {mb:.1f} / {total_mb:.1f} MB ({written * 100 / total_size:.1f}%)")
+                    else:
+                        print(f"  ... {mb:.1f} MB")
+                    next_log_bytes = written + 50 * 1024 * 1024
+    finally:
+        if pbar is not None:
+            pbar.close()
+    return written
+
+
+def _download_direct_requests(download_url, tmp_path, desc, max_retries=5):
+    import requests
+
+    session = requests.Session()
+    base_headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+    }
+
+    for attempt in range(1, max_retries + 1):
+        existing_size = os.path.getsize(tmp_path) if os.path.isfile(tmp_path) else 0
+        req_headers = dict(base_headers)
+        if existing_size > 0:
+            req_headers["Range"] = f"bytes={existing_size}-"
+
+        try:
+            with session.get(
+                download_url,
+                headers=req_headers,
+                stream=True,
+                allow_redirects=True,
+                timeout=(30, 120),
+            ) as resp:
+                if resp.status_code == 416:
+                    total = _parse_content_range_total(resp.headers.get("Content-Range"))
+                    if total is not None and existing_size == total:
+                        return
+                    if os.path.exists(tmp_path):
+                        os.remove(tmp_path)
+                    if attempt >= max_retries:
+                        raise RuntimeError(f"HTTP 416 Range Not Satisfiable for '{download_url}'")
+                    continue
+
+                if resp.status_code in (401, 403, 404):
+                    raise RuntimeError(
+                        f"HTTP {resp.status_code} when downloading '{download_url}'. "
+                        "SharePoint/OneDrive may require browser access or the link may have expired."
+                    )
+                resp.raise_for_status()
+
+                content_type = resp.headers.get("Content-Type", "")
+                if "text/html" in content_type.lower():
+                    raise RuntimeError(
+                        f"Server returned HTML ('{content_type}') instead of archive from '{download_url}'. "
+                        "Check link sharing permissions or update the URL in dataset.txt."
+                    )
+
+                content_len = resp.headers.get("Content-Length")
+                chunk_len = int(content_len) if content_len and content_len.isdigit() else None
+
+                if resp.status_code == 206:
+                    mode = "ab"
+                    initial = existing_size
+                    total_size = _parse_content_range_total(resp.headers.get("Content-Range"))
+                    if total_size is None and chunk_len is not None:
+                        total_size = existing_size + chunk_len
+                    if existing_size > 0:
+                        print(f"[RESUME] Resuming {desc} from {existing_size / (1024 * 1024):.1f} MB")
+                else:
+                    mode = "wb"
+                    initial = 0
+                    total_size = chunk_len
+
+                written = _stream_to_file(
+                    resp.iter_content(chunk_size=1024 * 1024),
+                    tmp_path,
+                    mode,
+                    total_size,
+                    initial,
+                    desc,
+                )
+
+                if total_size is not None and written < total_size:
+                    raise IOError(
+                        f"Incomplete stream ({written}/{total_size} bytes received)"
+                    )
+                return
+        except (requests.exceptions.RequestException, IOError) as exc:
+            if attempt >= max_retries:
+                raise RuntimeError(
+                    f"Download failed after {max_retries} attempts for '{download_url}': {exc}\n"
+                    f"Partial file kept at '{tmp_path}' (re-run without --force to resume, "
+                    f"or download manually in browser from: {download_url})"
+                ) from exc
+            wait_s = min(2 ** attempt, 16)
+            cur_mb = (os.path.getsize(tmp_path) if os.path.isfile(tmp_path) else 0) / (1024 * 1024)
+            print(f"[RETRY {attempt}/{max_retries}] {exc} — retrying in {wait_s}s (saved {cur_mb:.1f} MB)...")
+            time.sleep(wait_s)
+
+
+def _download_direct_urllib(download_url, tmp_path, desc, max_retries=5):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+
+    for attempt in range(1, max_retries + 1):
+        existing_size = os.path.getsize(tmp_path) if os.path.isfile(tmp_path) else 0
+        req_headers = dict(headers)
+        if existing_size > 0:
+            req_headers["Range"] = f"bytes={existing_size}-"
+
+        req = urllib.request.Request(download_url, headers=req_headers)
+        try:
+            with opener.open(req, timeout=120) as resp:
+                status = getattr(resp, "status", 200)
+                content_type = resp.headers.get("Content-Type", "")
+                if "text/html" in content_type.lower():
+                    raise RuntimeError(
+                        f"Server returned HTML ('{content_type}') instead of archive from '{download_url}'. "
+                        "Check link sharing permissions or update the URL in dataset.txt."
+                    )
+
+                content_len = resp.headers.get("Content-Length")
+                chunk_len = int(content_len) if content_len and content_len.isdigit() else None
+                if status == 206:
+                    mode = "ab"
+                    initial = existing_size
+                    total_size = _parse_content_range_total(resp.headers.get("Content-Range"))
+                    if total_size is None and chunk_len is not None:
+                        total_size = existing_size + chunk_len
+                else:
+                    mode = "wb"
+                    initial = 0
+                    total_size = chunk_len
+
+                def _iter_urllib():
+                    while True:
+                        chunk = resp.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        yield chunk
+
+                written = _stream_to_file(_iter_urllib(), tmp_path, mode, total_size, initial, desc)
+                if total_size is not None and written < total_size:
+                    raise IOError(f"Incomplete stream ({written}/{total_size} bytes received)")
+                return
+        except (urllib.error.URLError, IOError) as exc:
+            if isinstance(exc, urllib.error.HTTPError) and exc.code == 416:
+                total = _parse_content_range_total(exc.headers.get("Content-Range"))
+                if total is not None and existing_size == total:
+                    return
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+                if attempt >= max_retries:
+                    raise RuntimeError(f"HTTP 416 Range Not Satisfiable for '{download_url}'") from exc
+                continue
+            if attempt >= max_retries:
+                raise RuntimeError(
+                    f"Download failed after {max_retries} attempts for '{download_url}': {exc}\n"
+                    f"Partial file kept at '{tmp_path}' (re-run without --force to resume, "
+                    f"or download manually in browser from: {download_url})"
+                ) from exc
+            wait_s = min(2 ** attempt, 16)
+            print(f"[RETRY {attempt}/{max_retries}] {exc} — retrying in {wait_s}s...")
+            time.sleep(wait_s)
+
+
+def _download_direct(url, output_path, force=False):
     download_url = _prepare_sharepoint_url(url) if (
         "sharepoint.com" in url.lower() or "onedrive" in url.lower() or "1drv.ms" in url.lower()
     ) else url
 
     tmp_path = output_path + ".part"
-    if os.path.exists(tmp_path):
+    if force and os.path.exists(tmp_path):
         os.remove(tmp_path)
 
-    headers = {"User-Agent": "Mozilla/5.0"}
+    desc = os.path.basename(output_path)
     try:
-        import requests
-
-        with requests.get(download_url, headers=headers, stream=True, allow_redirects=True, timeout=60) as resp:
-            resp.raise_for_status()
-            content_type = resp.headers.get("Content-Type", "")
-            if "text/html" in content_type.lower():
-                raise RuntimeError(
-                    f"Server returned HTML ('{content_type}') instead of archive from '{download_url}'. "
-                    "Check link sharing permissions or update the URL in dataset.txt."
-                )
-            with open(tmp_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
+        import requests  # noqa: F401
+        _download_direct_requests(download_url, tmp_path, desc=desc)
     except ImportError:
-        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
-        req = urllib.request.Request(download_url, headers=headers)
-        with opener.open(req, timeout=60) as resp:
-            content_type = resp.headers.get("Content-Type", "")
-            if "text/html" in content_type.lower():
-                raise RuntimeError(
-                    f"Server returned HTML ('{content_type}') instead of archive from '{download_url}'. "
-                    "Check link sharing permissions or update the URL in dataset.txt."
-                )
-            with open(tmp_path, "wb") as f:
-                while True:
-                    chunk = resp.read(1024 * 1024)
-                    if not chunk:
-                        break
-                    f.write(chunk)
+        _download_direct_urllib(download_url, tmp_path, desc=desc)
 
     if not os.path.isfile(tmp_path) or os.path.getsize(tmp_path) == 0:
         if os.path.exists(tmp_path):
@@ -264,7 +448,7 @@ def download_entry(entry, archive_dir, force=False):
     if "drive.google.com" in url.lower():
         _download_google_drive(url, output_path)
     else:
-        _download_direct(url, output_path)
+        _download_direct(url, output_path, force=force)
     return output_path, True
 
 
